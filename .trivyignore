@@ -1,0 +1,14 @@
+# Accepted findings, with reasons. Anything not listed here fails CI.
+# Review this file when the modules change.
+
+# AWS-0132 Bucket does not encrypt with a customer managed key.
+# The state backend's access log bucket is SSE-S3. S3 server access logging
+# cannot write to a bucket encrypted with a customer managed key, and a log
+# bucket that silently rejects writes is worse than one using an AWS managed
+# key. The state bucket itself does use a CMK.
+AWS-0132
+
+# AWS-0136 Topic encryption does not use a customer managed key.
+# The alarm topic uses alias/aws/sns. It carries alarm names, not data, and a
+# CMK here would add a key and a key policy to maintain for no gain.
+AWS-0136
