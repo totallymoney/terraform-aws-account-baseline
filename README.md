@@ -15,11 +15,12 @@ during a security review, an audit, or an incident.
 | Audit trail | Multi region CloudTrail with log file validation, its own CMK, a versioned S3 bucket that only CloudTrail can write to, and a CloudWatch log group |
 | Alarms | Five CloudWatch alarms over the trail: root credential use, repeated denied API calls, IAM policy changes, console sign in without MFA, and changes to the trail itself. All publish to one SNS topic |
 | Threat detection | GuardDuty, with S3 data events, EBS malware scanning, RDS login events and Lambda network logs |
-| Reporting | Security Hub with the AWS Foundational Security Best Practices and CIS AWS Foundations Benchmark v3.0 standards |
-| Configuration history | AWS Config recorder, delivery channel and its own bucket |
+| Reporting | Security Hub with the AWS Foundational Security Best Practices and CIS AWS Foundations Benchmark v5.0 standards |
+| Configuration history | AWS Config recorder, delivery channel and its own bucket, with continuous or daily recording |
+| Findings | GuardDuty and Security Hub findings routed to the alarm topic through EventBridge, with readable message templates |
 | Access review | IAM Access Analyzer for external access findings |
 | Account guardrails | S3 account level public access block, EBS encryption by default, block on new public AMI sharing, IMDSv2 as the regional default, IAM password policy |
-| Contacts and cost | Security alternate contact, monthly cost budget with forecast and actual alerts |
+| Contacts and cost | Security alternate contact, monthly cost budget with forecast and actual alerts, Cost Explorer anomaly detection |
 | CI access | GitHub Actions OIDC provider and roles, pinned to specific repositories |
 | State backend | `modules/tfstate-backend`: encrypted state bucket, CMK, access log bucket and lock table |
 
@@ -162,7 +163,12 @@ checks are all small.
 | `enable_config` | bool | `true` | Set false to avoid the Config bill, at the cost of Security Hub coverage |
 | `config_include_global_resources` | bool | `true` | Leave true in one region only |
 | `guardduty_features` | list(string) | four features | Trim to what you run |
-| `securityhub_standards` | list(string) | FSBP and CIS v3.0 | Also accepts `nist-800-53` and `pci-dss` |
+| `securityhub_standards` | list(string) | FSBP and CIS v5.0 | Also accepts `aws-resource-tagging-standard`, `nist-800-53`, `nist-800-171`, `pci-dss` and `cis-aws-foundations-benchmark-v3` |
+| `config_recording_frequency` | string | `CONTINUOUS` | `DAILY` is a large saving in a busy account |
+| `config_resource_types` | list(string) | `[]` | Empty records everything. The README of `variables.tf` lists a foundational subset |
+| `guardduty_notify_min_severity` | number | `7` | 7 is HIGH, 4 is MEDIUM |
+| `securityhub_notify_severities` | list(string) | `["CRITICAL"]` | |
+| `cost_anomaly_emails` | list(string) | `[]` | Setting this creates the anomaly monitor. Empty means none |
 | `security_contact` | object | `null` | Holds personal data. Prefer a shared mailbox and an on call number |
 | `monthly_budget_usd` | number | `null` | Monthly cost budget |
 | `create_github_oidc_provider` | bool | `false` | One per account |
@@ -178,7 +184,7 @@ Every input is documented in [variables.tf](variables.tf).
 
 ## Controls this covers
 
-Mapped to the CIS AWS Foundations Benchmark v3.0 and the AWS Well-Architected
+Mapped to the CIS AWS Foundations Benchmark v5.0 and the AWS Well-Architected
 Framework security pillar.
 
 | Control | Where |
@@ -192,6 +198,7 @@ Framework security pillar.
 | CIS 3.3 CloudTrail bucket is not public | `cloudtrail.tf` |
 | CIS 3.4 CloudTrail integrated with CloudWatch Logs | `cloudtrail.tf` |
 | CIS 3.5 AWS Config enabled | `config.tf` |
+| CIS 4.16 Security Hub findings are actioned | `findings-notifications.tf` |
 | CIS 3.6 CloudTrail bucket access logging | see note below |
 | CIS 3.7 CloudTrail encrypted with a CMK | `kms.tf` |
 | CIS 3.8 CMK rotation enabled | `kms.tf` |
@@ -237,6 +244,24 @@ rewrite the policy beyond the account administrator.
 **The password policy sets no maximum age.** CIS v3.0 dropped the forced rotation
 requirement, in line with NIST SP 800-63B. Rotation on a schedule pushes people
 towards predictable passwords.
+
+**Findings are routed, not just recorded.** GuardDuty findings at severity 7 and
+above, and Security Hub CRITICAL findings, publish to the same SNS topic the
+alarms use. Both go through an EventBridge input transformer so the message is
+a readable sentence rather than a page of JSON. A finding nobody is told about
+is a finding nobody acts on.
+
+**The cost anomaly monitor has no enable flag.** It is created when
+`cost_anomaly_emails` is not empty, and not otherwise. AWS rejects a
+subscription with no subscribers, and a monitor nobody hears about is pointless,
+so a separate boolean would only allow a combination that cannot work.
+
+**Standards versions are checked, not assumed.** CIS v5.0.0 is current as of the
+last release. Confirm before you rely on it:
+
+```bash
+aws securityhub describe-standards --query 'Standards[].[Name,StandardsArn]' --output table
+```
 
 **State files are production data.** They contain every value your configuration
 touches, including generated passwords. `modules/tfstate-backend` encrypts the

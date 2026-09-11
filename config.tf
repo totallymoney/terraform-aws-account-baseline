@@ -219,9 +219,19 @@ resource "aws_config_configuration_recorder" "this" {
   name     = var.name
   role_arn = aws_iam_role.config[0].arn
 
+  # An empty config_resource_types records everything, which is correct and is
+  # also the expensive option. Naming types narrows both.
   recording_group {
-    all_supported                 = true
-    include_global_resource_types = var.config_include_global_resources
+    all_supported                 = length(var.config_resource_types) == 0
+    include_global_resource_types = length(var.config_resource_types) == 0 ? var.config_include_global_resources : false
+    resource_types                = length(var.config_resource_types) == 0 ? null : var.config_resource_types
+  }
+
+  # DAILY records one item per resource per day instead of one per change.
+  # In an account with heavy autoscaling that is most of the Config bill.
+  # Security Hub findings then refresh daily rather than on change.
+  recording_mode {
+    recording_frequency = var.config_recording_frequency
   }
 }
 

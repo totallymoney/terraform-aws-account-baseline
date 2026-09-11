@@ -37,6 +37,9 @@ module "baseline" {
 
   budget_notification_emails = ["finops@example.com"]
 
+  # Creates the anomaly monitor. Catches a daily spike a monthly budget misses.
+  cost_anomaly_emails = ["finops@example.com"]
+
   # Holds personal data. Prefer a shared mailbox and an on call number.
   security_contact = {
     name          = "Security"

@@ -2,8 +2,12 @@
 # belongs in Security Hub, which reports without paging you.
 
 locals {
+  # The topic stands on its own: GuardDuty and Security Hub publish to it even
+  # when CloudTrail is delivered from a management account.
+  topic_count = var.enable_alarms ? 1 : 0
+
+  # The metric filters read the trail's log group, so they need the trail.
   alarms_enabled = var.enable_cloudtrail && var.enable_alarms
-  alarm_count    = local.alarms_enabled ? 1 : 0
 
   alarm_filters = {
     root-account-used = {
@@ -35,7 +39,7 @@ locals {
 }
 
 resource "aws_sns_topic" "alarms" {
-  count = local.alarm_count
+  count = local.topic_count
 
   name              = "${var.name}-security-alarms"
   kms_master_key_id = "alias/aws/sns"
@@ -43,17 +47,19 @@ resource "aws_sns_topic" "alarms" {
 }
 
 resource "aws_sns_topic_policy" "alarms" {
-  count = local.alarm_count
+  count = local.topic_count
 
   arn = aws_sns_topic.alarms[0].arn
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
-      Action    = "SNS:Publish"
-      Resource  = aws_sns_topic.alarms[0].arn
-      Principal = { Service = "cloudwatch.amazonaws.com" }
+      Effect   = "Allow"
+      Action   = "SNS:Publish"
+      Resource = aws_sns_topic.alarms[0].arn
+      Principal = {
+        Service = ["cloudwatch.amazonaws.com", "events.amazonaws.com"]
+      }
       Condition = {
         StringEquals = { "aws:SourceAccount" = local.account_id }
       }
@@ -63,7 +69,7 @@ resource "aws_sns_topic_policy" "alarms" {
 
 # Confirmation arrives by email and has to be clicked.
 resource "aws_sns_topic_subscription" "alarm_email" {
-  count = local.alarms_enabled && var.alarm_email != null ? 1 : 0
+  count = var.enable_alarms && var.alarm_email != null ? 1 : 0
 
   topic_arn = aws_sns_topic.alarms[0].arn
   protocol  = "email"

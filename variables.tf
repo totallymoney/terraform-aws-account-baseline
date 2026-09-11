@@ -81,7 +81,7 @@ variable "enable_securityhub" {
 
 variable "securityhub_standards" {
   type        = list(string)
-  description = "Standards to subscribe to, by short name."
+  description = "Standards to subscribe to, by short name. `cis-aws-foundations-benchmark` is v5.0.0; `cis-aws-foundations-benchmark-v3` is there for anyone mid migration."
   default     = ["aws-foundational-security-best-practices", "cis-aws-foundations-benchmark"]
 
   validation {
@@ -89,11 +89,14 @@ variable "securityhub_standards" {
       for s in var.securityhub_standards : contains([
         "aws-foundational-security-best-practices",
         "cis-aws-foundations-benchmark",
+        "cis-aws-foundations-benchmark-v3",
+        "aws-resource-tagging-standard",
         "nist-800-53",
+        "nist-800-171",
         "pci-dss",
       ], s)
     ])
-    error_message = "Supported standards are aws-foundational-security-best-practices, cis-aws-foundations-benchmark, nist-800-53 and pci-dss."
+    error_message = "See local.standard_arns in securityhub.tf for the supported names."
   }
 }
 
@@ -224,4 +227,67 @@ variable "config_include_global_resources" {
   type        = bool
   description = "Record global resources such as IAM. Leave true in one region only, otherwise you pay for the same items repeatedly."
   default     = true
+}
+
+variable "config_recording_frequency" {
+  type        = string
+  description = "CONTINUOUS records every change. DAILY records once a day and is a large cost saving in a busy account, at the price of findings that refresh daily."
+  default     = "CONTINUOUS"
+
+  validation {
+    condition     = contains(["CONTINUOUS", "DAILY"], var.config_recording_frequency)
+    error_message = "Must be CONTINUOUS or DAILY."
+  }
+}
+
+variable "config_resource_types" {
+  type        = list(string)
+  description = <<-EOT
+    Resource types to record. Empty records everything, which is correct and is
+    also the largest line on the bill. A foundational subset that still feeds
+    most Security Hub controls:
+
+      ["AWS::IAM::User", "AWS::IAM::Role", "AWS::IAM::Policy", "AWS::IAM::Group",
+       "AWS::S3::Bucket", "AWS::EC2::SecurityGroup", "AWS::EC2::Instance",
+       "AWS::EC2::Volume", "AWS::EC2::VPC", "AWS::KMS::Key",
+       "AWS::CloudTrail::Trail", "AWS::RDS::DBInstance", "AWS::Lambda::Function"]
+  EOT
+  default     = []
+}
+
+variable "guardduty_notify_min_severity" {
+  type        = number
+  description = "Lowest GuardDuty severity that sends a notification. 7 is HIGH, 4 is MEDIUM. Below 4 is noise."
+  default     = 7
+
+  validation {
+    condition     = var.guardduty_notify_min_severity >= 1 && var.guardduty_notify_min_severity <= 10
+    error_message = "GuardDuty severity runs from 1 to 10."
+  }
+}
+
+variable "securityhub_notify_severities" {
+  type        = list(string)
+  description = "Security Hub severities that send a notification."
+  default     = ["CRITICAL"]
+
+  validation {
+    condition = alltrue([
+      for s in var.securityhub_notify_severities :
+      contains(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"], s)
+    ])
+    error_message = "Valid severities are CRITICAL, HIGH, MEDIUM, LOW and INFORMATIONAL."
+  }
+}
+
+variable "cost_anomaly_emails" {
+  type        = list(string)
+  description = "Addresses notified about cost anomalies. Setting this creates a Cost Explorer anomaly monitor, which is free and catches spikes a monthly budget never sees. Empty means no monitor."
+  default     = []
+}
+
+variable "cost_anomaly_threshold_usd" {
+  type        = number
+  description = "Only alert when the unexpected spend reaches this many dollars."
+  default     = 100
 }
